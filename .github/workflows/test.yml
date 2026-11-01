@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx ruff check .
+
+  pytest:
+    name: Pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # The plugin pins homeassistant; 0.13.375 = 2026.10.4. Bump both together.
+      - run: >-
+          uv run --no-project --python 3.14
+          --with pytest-homeassistant-custom-component==0.13.375
+          --with zwave-js-server-python==0.73.1
+          pytest -q -p no:cacheprovider

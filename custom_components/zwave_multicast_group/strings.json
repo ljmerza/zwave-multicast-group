@@ -1,0 +1,42 @@
+{
+  "title": "Z-Wave Multicast Group",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Z-Wave multicast cover group",
+        "description": "Combine Z-Wave covers into one cover that moves them with a single Z-Wave multicast frame, so they start at the same moment.",
+        "data": {
+          "name": "Name",
+          "entities": "Members",
+          "travel_time": "Travel time"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS covers that report a position. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "travel_time": "Seconds the slowest member needs end to end. The group shows opening/closing for this long, then checks each member really arrived and re-sends to any that didn't."
+        }
+      }
+    },
+    "error": {
+      "too_few_entities": "Pick at least two covers.",
+      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "entities": "Members",
+          "travel_time": "Travel time"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS covers that report a position.",
+          "travel_time": "Seconds the slowest member needs end to end."
+        }
+      }
+    },
+    "error": {
+      "too_few_entities": "Pick at least two covers.",
+      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position."
+    }
+  }
+}
