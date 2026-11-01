@@ -107,3 +107,65 @@ def test_percent_conversion_matches_ha_zwave_js():
     assert members.zwave_to_percent(99, 0, 99) == 100
     assert members.zwave_to_percent(6, 0, 99) == 6
     assert members.zwave_to_percent(5, 5, 5) == 0
+
+
+def test_position_value_skips_slat_angles():
+    pv = members.position_value
+    assert pv(members.parse_unique_id("1.143-106-0-currentValue-23")) is None  # horizontal slats
+    assert pv(members.parse_unique_id("1.143-106-0-currentValue-11")) is None  # vertical slats
+
+
+def test_member_value_per_domain():
+    mv = members.member_value
+    dimmer = members.parse_unique_id("1.20-38-0-currentValue")
+    binary = members.parse_unique_id("1.30-37-0-currentValue")
+    assert mv("light", dimmer) and mv("light", binary)
+    assert mv("switch", binary) and mv("switch", dimmer) is None
+    assert mv("fan", dimmer) and mv("fan", binary) is None
+    assert mv("light", members.parse_unique_id("1.62-51-0-currentColor")) is None  # color only
+    assert mv("light", members.parse_unique_id("1.63-32-0-currentValue")) is None  # Basic CC
+    assert mv("switch", members.parse_unique_id("1.60-112-0-12")) is None  # config parameter
+    assert mv("switch", members.parse_unique_id("1.30-37-0-targetValue")) is None
+    assert mv("lock", members.parse_unique_id("1.5-98-0-currentMode")) is None
+    assert mv("cover", members.parse_unique_id("1.65-102-0-currentState")) is None  # barrier
+
+
+def test_target_and_stop_value_ids():
+    wc = members.parse_unique_id("1.143-106-0-currentValue-13")
+    assert members.target_value_id(wc) == "143-106-0-targetValue-13"
+    assert members.stop_value_ids(wc) == [("levelChangeUp", "143-106-0-levelChangeUp-13")]
+    ms = members.parse_unique_id("1.12-38-1-currentValue")
+    assert members.target_value_id(ms) == "12-38-1-targetValue"
+    assert [p for p, _ in members.stop_value_ids(ms)] == ["Open", "Up", "On"]
+    assert members.stop_value_ids(members.parse_unique_id("1.30-37-0-currentValue")) == []
+
+
+def test_stop_value_data():
+    wc = _member("cover.a", 143)
+    wc = Member(**{**wc.__dict__, "stop_property": "levelChangeUp"})
+    assert members.stop_value_data(wc) == {
+        "commandClass": 106, "endpoint": 0, "property": "levelChangeUp", "propertyKey": 13,
+    }
+    ms = _member("cover.b", 12, cc=38, key=None)
+    ms = Member(**{**ms.__dict__, "stop_property": "Up"})
+    assert members.stop_value_data(ms) == {"commandClass": 38, "endpoint": 0, "property": "Up"}
+
+
+def test_partition_extra_key_splits_batches():
+    a, b, c = _member("x.a", 1), _member("x.b", 2), _member("x.c", 3)
+    batches, singles = members.partition([a, b, c], lambda m: m.entity_id == "x.c")
+    assert batches == [[a, b]] and singles == [c]
+
+
+def test_brightness_and_fan_conversions():
+    assert members.brightness_to_zwave(255) == 99
+    assert members.brightness_to_zwave(1) == 1  # never rounds an "on" down to off
+    assert members.brightness_to_zwave(0) == 0
+    assert members.brightness_to_zwave(128) == 50
+    assert members.zwave_to_brightness(99) == 255
+    assert members.fan_percentage_to_zwave(0) == 0
+    assert members.fan_percentage_to_zwave(1) == 1
+    assert members.fan_percentage_to_zwave(50) == 50
+    assert members.fan_percentage_to_zwave(100) == 99
+    assert members.zwave_to_fan_percentage(99) == 100
+    assert members.zwave_to_fan_percentage(33) == 33

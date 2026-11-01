@@ -3,6 +3,16 @@
   "config": {
     "step": {
       "user": {
+        "title": "Z-Wave multicast group",
+        "description": "Group Z-Wave JS entities into one entity that commands them with a single Z-Wave multicast frame, so they act at the same moment. Pick the kind of group.",
+        "menu_options": {
+          "cover": "Cover group",
+          "fan": "Fan group",
+          "light": "Light group",
+          "switch": "Switch group"
+        }
+      },
+      "cover": {
         "title": "Z-Wave multicast cover group",
         "description": "Combine Z-Wave covers into one cover that moves them with a single Z-Wave multicast frame, so they start at the same moment.",
         "data": {
@@ -11,32 +21,105 @@
           "travel_time": "Travel time"
         },
         "data_description": {
-          "entities": "Z-Wave JS covers that report a position. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "entities": "Z-Wave JS covers that report a position (not gates or garage doors). Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
           "travel_time": "Seconds the slowest member needs end to end. The group shows opening/closing for this long, then checks each member really arrived and re-sends to any that didn't."
+        }
+      },
+      "fan": {
+        "title": "Z-Wave multicast fan group",
+        "description": "Combine Z-Wave fans into one fan that turns them on, off or to a speed with a single Z-Wave multicast frame. Preset modes stay on the members.",
+        "data": {
+          "name": "Name",
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS Multilevel Switch fans. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
+        }
+      },
+      "light": {
+        "title": "Z-Wave multicast light group",
+        "description": "Combine Z-Wave lights into one light that turns them on, off or to a brightness with a single Z-Wave multicast frame. Color stays on the members.",
+        "data": {
+          "name": "Name",
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS lights switched by a Multilevel or Binary Switch. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
+        }
+      },
+      "switch": {
+        "title": "Z-Wave multicast switch group",
+        "description": "Combine Z-Wave switches into one switch that turns them on or off with a single Z-Wave multicast frame.",
+        "data": {
+          "name": "Name",
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS Binary Switches. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
         }
       }
     },
     "error": {
-      "too_few_entities": "Pick at least two covers.",
-      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position."
+      "too_few_entities": "Pick at least two members.",
+      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position.",
+      "unsupported_member": "Every member must be a Z-Wave JS entity of this type that this group can multicast to (see the member list description).",
+      "unsafe_member": "Gates and garage doors can't be grouped."
     }
   },
   "options": {
     "step": {
-      "init": {
+      "cover": {
         "data": {
           "entities": "Members",
           "travel_time": "Travel time"
         },
         "data_description": {
-          "entities": "Z-Wave JS covers that report a position.",
-          "travel_time": "Seconds the slowest member needs end to end."
+          "entities": "Z-Wave JS covers that report a position (not gates or garage doors). Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "travel_time": "Seconds the slowest member needs end to end. The group shows opening/closing for this long, then checks each member really arrived and re-sends to any that didn't."
+        }
+      },
+      "fan": {
+        "data": {
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS Multilevel Switch fans. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
+        }
+      },
+      "light": {
+        "data": {
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS lights switched by a Multilevel or Binary Switch. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
+        }
+      },
+      "switch": {
+        "data": {
+          "entities": "Members",
+          "verify_delay": "Verify delay"
+        },
+        "data_description": {
+          "entities": "Z-Wave JS Binary Switches. Non-secure members on the same controller are sent one multicast; the rest are sent the normal command.",
+          "verify_delay": "Seconds to wait before checking each member really got the command and re-sending to any that didn't. A light's transition is added on top."
         }
       }
     },
     "error": {
-      "too_few_entities": "Pick at least two covers.",
-      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position."
+      "too_few_entities": "Pick at least two members.",
+      "not_position_cover": "Every member must be a Z-Wave JS cover that reports a position.",
+      "unsupported_member": "Every member must be a Z-Wave JS entity of this type that this group can multicast to (see the member list description).",
+      "unsafe_member": "Gates and garage doors can't be grouped."
     }
   }
 }

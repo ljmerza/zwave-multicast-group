@@ -12,7 +12,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.zwave_multicast_group.const import DOMAIN
 
-from .conftest import LEFT, RIGHT, set_member
+from .conftest import LEFT, MEMBERS, RIGHT, set_member
 
 GROUP = "cover.bonus_blinds"
 TRAVEL = 45
@@ -79,8 +79,8 @@ async def test_close_sends_one_multicast_then_verifies(
     state = hass.states.get(GROUP)
     assert state.state == "closed"
     assert state.attributes["last_verify"] == "ok"
-    for node in zwave.nodes.values():
-        node.async_poll_value.assert_awaited_once()
+    for node_id in MEMBERS.values():
+        zwave.nodes[node_id].async_poll_value.assert_awaited_once()
     assert one_by_one == []
 
 
@@ -112,10 +112,13 @@ async def test_failed_multicast_falls_back_to_one_by_one(
     multicast.side_effect = FailedZWaveCommand("msg", 0, "Unable to set value via multicast")
     await hass.services.async_call("cover", "open_cover", {"entity_id": GROUP}, blocking=True)
 
+    assert multicast.call_count == 2  # one retry before giving up on sync
     assert one_by_one == [(100, [LEFT, RIGHT])]
     state = hass.states.get(GROUP)
-    assert state.attributes["multicast_failures"] == 1
-    assert "after a failed multicast" in state.attributes["last_delivery"]
+    assert state.attributes["multicast_failures"] == 2
+    assert state.attributes["last_delivery"] == (
+        "multicast 0, one by one 2 (2 needed a multicast retry; 2 after a failed multicast)"
+    )
     assert state.attributes["last_verify"] is None  # nothing was multicast, nothing to verify
 
 
@@ -131,20 +134,157 @@ async def test_secure_member_is_sent_one_by_one(
 
 
 async def test_toggle_mid_travel_stops_and_cancels_verify(
-    hass: HomeAssistant, zwave, multicast, one_by_one, member_service_calls
+    hass: HomeAssistant, zwave, multicast, member_service_calls
 ) -> None:
     await _setup_group(hass)
     await hass.services.async_call("cover", "close_cover", {"entity_id": GROUP}, blocking=True)
     assert hass.states.get(GROUP).state == "closing"
 
     await hass.services.async_call("cover", "toggle", {"entity_id": GROUP}, blocking=True)
-    assert ("stop_cover", sorted([LEFT, RIGHT])) in member_service_calls
-    assert hass.states.get(GROUP).attributes["last_command"] == "stop"
+    assert multicast.call_args.kwargs["value_data"]["property"] == "levelChangeUp"
+    assert ("stop_cover", sorted([LEFT, RIGHT])) in member_service_calls  # the backstop
+    state = hass.states.get(GROUP)
+    assert state.attributes["last_command"] == "stop"
+    assert state.state == "closed"  # no longer shows the travel
 
     await _after_travel(hass)
-    for node in zwave.nodes.values():
-        node.async_poll_value.assert_not_awaited()
+    for node_id in MEMBERS.values():
+        zwave.nodes[node_id].async_poll_value.assert_not_awaited()
+    assert [c for c in member_service_calls if c[0] != "stop_cover"] == []
+
+
+async def test_stop_is_one_multicast_then_a_backstop(
+    hass: HomeAssistant, zwave, multicast, one_by_one
+) -> None:
+    await _setup_group(hass)
+    await hass.services.async_call("cover", "stop_cover", {"entity_id": GROUP}, blocking=True)
+
+    assert multicast.call_count == 1
+    kwargs = multicast.call_args.kwargs
+    assert kwargs["new_value"] is False
+    assert kwargs["value_data"] == {
+        "commandClass": 106,
+        "endpoint": 0,
+        "property": "levelChangeUp",
+        "propertyKey": 13,
+    }
+    assert sorted(n.node_id for n in kwargs["nodes"]) == [142, 143]
+    # The normal stop follows to each multicast member (no target to verify a stop by).
+    assert one_by_one == [(None, [LEFT, RIGHT])]
+    state = hass.states.get(GROUP)
+    assert state.attributes["last_delivery"] == "multicast 2, one by one 0, backstop 2"
+    assert state.attributes["last_verify"] is None
+
+
+async def test_multilevel_switch_cover_stops_with_its_open_value(
+    hass: HomeAssistant, zwave, multicast, one_by_one
+) -> None:
+    """A Multilevel Switch cover stops via Open/Up/On = False, whichever it has."""
+    from homeassistant.helpers import entity_registry as er
+
+    from .conftest import HOME_ID, _node, _value
+
+    ent_reg = er.async_get(hass)
+    for entity_id, node_id, stop_prop in (("cover.shade_a", 50, "Up"), ("cover.shade_b", 51, "Up")):
+        node = _node(node_id, f"{node_id}-38-0-currentValue")
+        node.values[f"{node_id}-38-0-{stop_prop}"] = _value()
+        zwave.nodes[node_id] = node
+        ent_reg.async_get_or_create(
+            "cover", "zwave_js", f"{HOME_ID}.{node_id}-38-0-currentValue",
+            suggested_object_id=entity_id.split(".")[1], config_entry=zwave.entry,
+        )
+        set_member(hass, entity_id, 50)
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Shades", version=1, minor_version=2,
+        options={"group_type": "cover", "name": "Shades",
+                 "entities": ["cover.shade_a", "cover.shade_b"], "travel_time": TRAVEL},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call("cover", "stop_cover", {"entity_id": "cover.shades"}, blocking=True)
+    kwargs = multicast.call_args.kwargs
+    assert kwargs["new_value"] is False
+    assert kwargs["value_data"] == {"commandClass": 38, "endpoint": 0, "property": "Up"}
+
+
+async def test_failed_stop_multicast_retries_then_stops_one_by_one(
+    hass: HomeAssistant, zwave, multicast, one_by_one
+) -> None:
+    await _setup_group(hass)
+    from zwave_js_server.exceptions import FailedZWaveCommand
+
+    multicast.side_effect = FailedZWaveCommand("msg", 204, "The node did not acknowledge")
+    await hass.services.async_call("cover", "stop_cover", {"entity_id": GROUP}, blocking=True)
+    assert multicast.call_count == 2
+    assert one_by_one == [(None, [LEFT, RIGHT])]
+    state = hass.states.get(GROUP)
+    assert "backstop" not in state.attributes["last_delivery"]
+    assert state.attributes["multicast_failures"] == 2
+
+
+async def test_first_multicast_fails_retry_lands(
+    hass: HomeAssistant, zwave, multicast, one_by_one
+) -> None:
+    """The live ZW0204-after-restart case: one retry keeps the members in sync."""
+    await _setup_group(hass)
+    from zwave_js_server.exceptions import FailedZWaveCommand
+
+    land = multicast.side_effect
+    attempts = []
+
+    async def _fail_first(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise FailedZWaveCommand("msg", 204, "Z-Wave error 204 - The node did not acknowledge")
+        return await land(*args, **kwargs)
+
+    multicast.side_effect = _fail_first
+    await hass.services.async_call("cover", "close_cover", {"entity_id": GROUP}, blocking=True)
+
+    assert multicast.call_count == 2
     assert one_by_one == []
+    state = hass.states.get(GROUP)
+    assert state.attributes["multicast_failures"] == 1
+    assert state.attributes["last_delivery"] == "multicast 2, one by one 0 (2 needed a multicast retry)"
+    assert state.attributes["last_verify"] == "pending"
+    await _after_travel(hass)
+    assert hass.states.get(GROUP).attributes["last_verify"] == "ok"
+
+
+async def test_old_entry_is_migrated_to_a_cover_group(hass: HomeAssistant, zwave) -> None:
+    """0.1.x stored no group_type (config entry 1.1); setup migrates it to 1.2."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bonus Blinds",
+        version=1,
+        minor_version=1,
+        options={"name": "Bonus Blinds", "entities": [LEFT, RIGHT], "travel_time": TRAVEL},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == 2
+    assert dict(entry.options) == {
+        "name": "Bonus Blinds",
+        "entities": [LEFT, RIGHT],
+        "travel_time": TRAVEL,
+        "group_type": "cover",
+    }
+    assert hass.states.get(GROUP).attributes["current_position"] == 100
+
+
+async def test_future_entry_version_is_refused(hass: HomeAssistant, zwave) -> None:
+    from homeassistant.config_entries import ConfigEntryState
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="x", version=2, minor_version=1,
+        options={"group_type": "cover", "name": "x", "entities": [LEFT, RIGHT]},
+    )
+    entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
 
 async def test_set_position(hass: HomeAssistant, zwave, multicast, one_by_one) -> None:

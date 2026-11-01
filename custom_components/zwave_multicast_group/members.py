@@ -1,4 +1,4 @@
-"""Parse Z-Wave JS cover entities and split them into multicast batches.
+"""Parse Z-Wave JS entities and split them into multicast batches.
 
 Pure helpers with no Home Assistant imports, so they can be unit-tested on their own.
 
@@ -9,8 +9,11 @@ A Z-Wave JS entity's unique ID is ``<home_id>.<value_id>`` and a value ID is
 
 from __future__ import annotations
 
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass
+import math
 
+SWITCH_BINARY = 37
 SWITCH_MULTILEVEL = 38
 WINDOW_COVERING = 106
 SUPPORTED_COMMAND_CLASSES = (SWITCH_MULTILEVEL, WINDOW_COVERING)
@@ -18,6 +21,19 @@ SUPPORTED_COMMAND_CLASSES = (SWITCH_MULTILEVEL, WINDOW_COVERING)
 # Window Covering parameters with an even key are the "no position" variants
 # (zwave_js_server.const.command_class.window_covering.NO_POSITION_PROPERTY_KEYS).
 NO_POSITION_KEYS = frozenset(range(0, 24, 2))
+# Vertical / horizontal slats angle (WindowCoveringPropertyKey 10/11, 22/23). HA's
+# zwave_js cover maps these to tilt with its own slat scale (open = 50), not position.
+SLAT_ANGLE_KEYS = frozenset({10, 11, 22, 23})
+
+# Stop values, as HA's zwave_js cover picks them: Window Covering stops by setting
+# levelChangeUp (same parameter key) to False; a Multilevel Switch cover by setting the
+# first of Open / Up / On to False (both are Stop Level Change).
+WINDOW_COVERING_STOP_PROPERTY = "levelChangeUp"
+MULTILEVEL_SWITCH_STOP_PROPERTIES = ("Open", "Up", "On")
+
+# Multilevel Switch "restore the previous non-zero level"
+# (zwave_js_server.const.command_class.multilevel_switch.SET_TO_PREVIOUS_VALUE).
+SET_TO_PREVIOUS_VALUE = 255
 
 CURRENT_VALUE = "currentValue"
 TARGET_VALUE = "targetValue"
@@ -50,6 +66,13 @@ class Member:
     max_value: int
     security_class: int | None
     protocol: int | None
+    # HA maps this member's levels with its own per-device table (zwave_js fans with a
+    # value mapping), so a level computed here can't be shared with it.
+    value_mapped: bool = False
+    # The member's targetValue accepts a transitionDuration option.
+    supports_transition: bool = False
+    # Property that stops this cover (set to False), if it has one.
+    stop_property: str | None = None
 
 
 def parse_value_id(value_id: str) -> ValueRef | None:
@@ -82,9 +105,49 @@ def position_value(ref: ValueRef | None) -> ValueRef | None:
         return None
     if ref.property_ != CURRENT_VALUE:
         return None
-    if ref.command_class == WINDOW_COVERING and ref.property_key in NO_POSITION_KEYS:
+    if ref.command_class == WINDOW_COVERING and (
+        ref.property_key in NO_POSITION_KEYS or ref.property_key in SLAT_ANGLE_KEYS
+    ):
         return None
     return ref
+
+
+def _current_value_of(ref: ValueRef | None, command_classes: tuple[int, ...]) -> ValueRef | None:
+    if ref is None or ref.command_class not in command_classes or ref.property_ != CURRENT_VALUE:
+        return None
+    return ref
+
+
+def light_value(ref: ValueRef | None) -> ValueRef | None:
+    """A light whose on/off (and level) is a Multilevel or Binary Switch currentValue.
+
+    Lights driven only by Color Switch or by Basic CC are left out.
+    """
+    return _current_value_of(ref, (SWITCH_MULTILEVEL, SWITCH_BINARY))
+
+
+def switch_value(ref: ValueRef | None) -> ValueRef | None:
+    """A Binary Switch currentValue (not config parameters, indicators or barriers)."""
+    return _current_value_of(ref, (SWITCH_BINARY,))
+
+
+def fan_value(ref: ValueRef | None) -> ValueRef | None:
+    """A Multilevel Switch fan (not Thermostat Fan Mode)."""
+    return _current_value_of(ref, (SWITCH_MULTILEVEL,))
+
+
+MEMBER_VALUE = {
+    "cover": position_value,
+    "fan": fan_value,
+    "light": light_value,
+    "switch": switch_value,
+}
+
+
+def member_value(domain: str, ref: ValueRef | None) -> ValueRef | None:
+    """The ref if a ``domain`` group can drive it, else None."""
+    check = MEMBER_VALUE.get(domain)
+    return check(ref) if check is not None else None
 
 
 def target_value_data(ref: ValueRef) -> dict:
@@ -95,6 +158,38 @@ def target_value_data(ref: ValueRef) -> dict:
         "property": TARGET_VALUE,
     }
     if ref.property_key is not None:
+        data["propertyKey"] = ref.property_key
+    return data
+
+
+def target_value_id(ref: ValueRef) -> str:
+    """Value ID of the targetValue that pairs with a currentValue."""
+    value_id = f"{ref.node_id}-{ref.command_class}-{ref.endpoint}-{TARGET_VALUE}"
+    if ref.property_key is not None:
+        value_id += f"-{ref.property_key}"
+    return value_id
+
+
+def stop_value_ids(ref: ValueRef) -> list[tuple[str, str]]:
+    """(property, value ID) candidates for a cover's stop value, in HA's order."""
+    base = f"{ref.node_id}-{ref.command_class}-{ref.endpoint}"
+    if ref.command_class == WINDOW_COVERING:
+        return [(WINDOW_COVERING_STOP_PROPERTY, f"{base}-{WINDOW_COVERING_STOP_PROPERTY}-{ref.property_key}")]
+    if ref.command_class == SWITCH_MULTILEVEL:
+        return [(prop, f"{base}-{prop}") for prop in MULTILEVEL_SWITCH_STOP_PROPERTIES]
+    return []
+
+
+def stop_value_data(member: Member) -> dict:
+    """ValueDataType for a member's stop value (it must have one)."""
+    assert member.stop_property is not None
+    ref = member.ref
+    data: dict = {
+        "commandClass": ref.command_class,
+        "endpoint": ref.endpoint,
+        "property": member.stop_property,
+    }
+    if ref.command_class == WINDOW_COVERING and ref.property_key is not None:
         data["propertyKey"] = ref.property_key
     return data
 
@@ -122,8 +217,14 @@ def multicast_key(member: Member) -> tuple | None:
     )
 
 
-def partition(members: list[Member]) -> tuple[list[list[Member]], list[Member]]:
-    """Split members into multicast batches (2+ members) and one-by-one singles."""
+def partition(
+    members: list[Member], extra_key: Callable[[Member], Hashable] | None = None
+) -> tuple[list[list[Member]], list[Member]]:
+    """Split members into multicast batches (2+ members) and one-by-one singles.
+
+    ``extra_key`` further splits batches (e.g. by the exact value and value ID a
+    command sends).
+    """
     groups: dict[tuple, list[Member]] = {}
     singles: list[Member] = []
     for member in members:
@@ -131,6 +232,8 @@ def partition(members: list[Member]) -> tuple[list[list[Member]], list[Member]]:
         if key is None:
             singles.append(member)
         else:
+            if extra_key is not None:
+                key = (*key, extra_key(member))
             groups.setdefault(key, []).append(member)
     batches: list[list[Member]] = []
     for group in groups.values():
@@ -152,3 +255,28 @@ def zwave_to_percent(value: float, min_value: int, max_value: int) -> int:
     if max_value == min_value:
         return 0
     return round((value - min_value) / (max_value - min_value) * 100)
+
+
+def brightness_to_zwave(brightness: float) -> int:
+    """0-255 brightness to a 0-99 level (HA zwave_js ``byte_to_zwave_brightness``)."""
+    if brightness > 0:
+        return max(1, round((brightness / 255) * 99))
+    return 0
+
+
+def zwave_to_brightness(level: float) -> int:
+    """0-99 level to 0-255 brightness (HA zwave_js light ``brightness``)."""
+    return round((level / 99) * 255)
+
+
+def fan_percentage_to_zwave(percentage: float) -> int:
+    """Fan % to a 0-99 level, as HA's zwave_js fan does with the 1-99 speed range."""
+    if percentage <= 0:
+        return 0
+    # ceil(percentage_to_ranged_value((1, 99), percentage)) in HA 2026.10
+    return min(99, math.ceil(percentage * 99 / 100))
+
+
+def zwave_to_fan_percentage(level: float) -> int:
+    """0-99 level to fan % (``ranged_value_to_percentage((1, 99), level)``)."""
+    return int(level * 100 // 99)
