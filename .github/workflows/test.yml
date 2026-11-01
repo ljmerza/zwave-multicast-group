@@ -6,21 +6,24 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   ruff:
     name: Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uvx ruff check .
 
   pytest:
     name: Pytest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       # The plugin pins homeassistant; 0.13.375 = 2026.10.4. Bump both together.
       - run: >-
           uv run --no-project --python 3.14

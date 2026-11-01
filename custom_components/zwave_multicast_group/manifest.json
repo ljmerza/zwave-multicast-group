@@ -1,6 +1,9 @@
 {
   "domain": "zwave_multicast_group",
   "name": "Z-Wave Multicast Group",
+  "categories": [
+    "helpers"
+  ],
   "codeowners": [
     "@ljmerza"
   ],
