@@ -1,5 +1,11 @@
 # Z-Wave Multicast Group
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![GitHub Release](https://img.shields.io/github/v/release/ljmerza/zwave-multicast-group)](https://github.com/ljmerza/zwave-multicast-group/releases)
+[![Validate](https://github.com/ljmerza/zwave-multicast-group/actions/workflows/validate.yml/badge.svg)](https://github.com/ljmerza/zwave-multicast-group/actions/workflows/validate.yml)
+[![Test](https://github.com/ljmerza/zwave-multicast-group/actions/workflows/test.yml/badge.svg)](https://github.com/ljmerza/zwave-multicast-group/actions/workflows/test.yml)
+[![License](https://img.shields.io/github/license/ljmerza/zwave-multicast-group)](LICENSE)
+
 A Home Assistant helper that groups Z-Wave JS covers into one cover entity and moves them
 with a **single Z-Wave multicast frame**, so they start at the same moment.
 
@@ -37,11 +43,27 @@ Window Covering command classes). Tilt is not supported yet.
 
 ## Install
 
-HACS → custom repository → `https://github.com/ljmerza/zwave-multicast-group` (Integration),
-or copy `custom_components/zwave_multicast_group` into your config's `custom_components/`.
-Restart Home Assistant.
+Needs Home Assistant 2026.10 or newer with the Z-Wave JS integration set up. Tested on
+Home Assistant 2026.10.4 with zwave-js-server-python 0.73.1.
 
-Tested on Home Assistant 2026.10.4 with zwave-js-server-python 0.73.1.
+### HACS
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ljmerza&repository=zwave-multicast-group&category=integration)
+
+1. Click the button above, or open HACS and search for **Z-Wave Multicast Group**.
+   If the search finds nothing, add it as a custom repository first: HACS → ⋮ →
+   **Custom repositories** → `https://github.com/ljmerza/zwave-multicast-group`, type
+   **Integration**.
+2. Click **Download**.
+3. Restart Home Assistant.
+
+### Manual
+
+1. Download the source zip of the
+   [latest release](https://github.com/ljmerza/zwave-multicast-group/releases/latest).
+2. Copy `custom_components/zwave_multicast_group` into the `custom_components/` folder of
+   your Home Assistant config (create it if it doesn't exist).
+3. Restart Home Assistant.
 
 ## Set up
 
