@@ -1,13 +1,15 @@
 {
   "domain": "zwave_multicast_group",
   "name": "Z-Wave Multicast Group",
-  "codeowners": ["@ljmerza"],
+  "codeowners": [
+    "@ljmerza"
+  ],
   "config_flow": true,
-  "dependencies": ["zwave_js"],
+  "dependencies": [],
   "documentation": "https://github.com/ljmerza/zwave-multicast-group",
   "integration_type": "helper",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/ljmerza/zwave-multicast-group/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
