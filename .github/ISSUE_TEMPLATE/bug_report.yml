@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in Z-Wave Multicast Group doesn't work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Z-Wave Multicast Group version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.10.4"
+    validations:
+      required: true
+  - type: input
+    id: zwave_js_version
+    attributes:
+      label: Z-Wave JS server / driver version
+      description: Settings → Devices & services → Z-Wave → the server's device page.
+  - type: textarea
+    id: members
+    attributes:
+      label: Group members
+      description: >-
+        Make and model of each member, and its security class (None, S0, S2) and
+        whether it's Long Range. Only non-secure classic Z-Wave members are multicast.
+  - type: textarea
+    id: attributes
+    attributes:
+      label: Group entity attributes
+      description: >-
+        `last_command`, `last_delivery`, `last_verify` and `multicast_failures` from
+        Developer tools → States, right after the problem happens.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Add `custom_components.zwave_multicast_group: debug` under `logger:` → `logs:`,
+        reproduce, then paste the relevant lines.
+      render: text

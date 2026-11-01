@@ -7,6 +7,10 @@ on:
   pull_request:
   schedule:
     - cron: "0 0 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   hacs:
@@ -14,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: HACS validation
         uses: hacs/action@main
@@ -26,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Hassfest validation
         uses: home-assistant/actions/hassfest@master
